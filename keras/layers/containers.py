@@ -122,9 +122,9 @@ class Graph(Layer):
         return len(self.outputs)
 
     def set_previous(self, layer, connection_map={}):
-        if self.nb_input != layer.nb_output:
+        if self.nb_input != layer.nb_output and not connection_map: # and self.nb_input != len(connection_map)):
             raise Exception('Cannot connect layers: input count does not match output count.')
-        if self.nb_input == 1:
+        if self.nb_input == 1 and not connection_map:
             self.inputs[self.input_order[0]].set_previous(layer)
         else:
             if not connection_map:
@@ -168,7 +168,7 @@ class Graph(Layer):
         self.inputs[name] = layer
         self.input_config.append({'name': name, 'ndim': ndim, 'dtype': dtype})
 
-    def add_node(self, layer, name, input=None, inputs=[], merge_mode='concat', create_output=False):
+    def add_node(self, layer, name, input=None, inputs=[], connection_map={}, merge_mode='concat', create_output=False):
         if hasattr(layer, 'set_name'):
             layer.set_name(name)
         if name in self.namespace:
@@ -177,9 +177,9 @@ class Graph(Layer):
             if input not in self.namespace:
                 raise Exception('Unknown node/input identifier: ' + input)
             if input in self.nodes:
-                layer.set_previous(self.nodes[input])
+                layer.set_previous(self.nodes[input], connection_map=connection_map)
             elif input in self.inputs:
-                layer.set_previous(self.inputs[input])
+                layer.set_previous(self.inputs[input], connection_map=connection_map)
         if inputs:
             to_merge = []
             for n in inputs:
@@ -190,7 +190,7 @@ class Graph(Layer):
                 else:
                     raise Exception('Unknown identifier: ' + n)
             merge = Merge(to_merge, mode=merge_mode)
-            layer.set_previous(merge)
+            layer.set_previous(merge, connection_map=connection_map)
 
         self.namespace.add(name)
         self.nodes[name] = layer
@@ -212,12 +212,19 @@ class Graph(Layer):
         if name in self.output_order:
             raise Exception('Duplicate output identifier: ' + name)
         if input:
-            if input not in self.namespace:
+            if input not in self.namespace and not '__' in input:
                 raise Exception('Unknown node/input identifier: ' + input)
             if input in self.nodes:
                 self.outputs[name] = self.nodes[input]
             elif input in self.inputs:
                 self.outputs[name] = self.inputs[input]
+            else:
+                namespace_parts = input.split('__')
+                src_output_name = namespace_parts.pop()
+                node = self
+                for part in namespace_parts:
+                    node = node.nodes[part]
+                self.outputs[name] = node.outputs[src_output_name]
         if inputs:
             to_merge = []
             for n in inputs:
