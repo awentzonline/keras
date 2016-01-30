@@ -290,42 +290,47 @@ class TestBackend(object):
         check_single_tensor_operation('l2_normalize', (4, 3), axis=-1)
         check_single_tensor_operation('l2_normalize', (4, 3), axis=1)
 
-    # def test_conv2d(self):
-    #     '''conv2d works "properly" with Theano and TF but outputs different
-    #     values in each case. Cause unclear (input / kernel shape format?)
-    #     '''
-    #     # TH kernel shape: (depth, input_depth, rows, cols)
-    #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 2, 2),
-    #                                strides=(1, 1), border_mode='valid')
-    #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 2, 2),
-    #                                strides=(1, 1), border_mode='same')
+    def test_conv2d(self):
+        '''conv2d works "properly" with Theano and TF but outputs different
+        values in each case. Cause unclear (input / kernel shape format?)
 
-    #     # TF kernel shape: (rows, cols, input_depth, depth)
-    #     check_two_tensor_operation('conv2d', (5, 10, 12, 3), (2, 2, 3, 4),
-    #                                strides=(1, 1), border_mode='valid', dim_ordering='tf')
-    #     check_two_tensor_operation('conv2d', (5, 10, 12, 3), (2, 2, 3, 4),
-    #                                strides=(1, 1), border_mode='same', dim_ordering='tf')
+        NOTE: TensorFlow conv2d is actually correlation unlike Theano.
+        There also appears to be some incompatibility with the 'same' padding
+        mode.
+        '''
+        # TH kernel shape: (depth, input_depth, rows, cols)
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 2, 2),
+                                   strides=(1, 1), border_mode='valid')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
+                                   strides=(1, 1), border_mode='same')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 2, 2),
+                                   strides=(1, 1), border_mode='same')
 
-    #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
-    #                                strides=(1, 1), border_mode='valid')
-    #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
-    #                                strides=(1, 1), border_mode='same')
+        # TF kernel shape: (rows, cols, input_depth, depth)
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 10, 12, 3), (2, 2, 3, 4),
+                                   strides=(1, 1), border_mode='valid', dim_ordering='tf')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 10, 12, 3), (3, 3, 3, 4),
+                                   strides=(1, 1), border_mode='same', dim_ordering='tf')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 10, 12, 3), (2, 2, 3, 4),
+                                   strides=(1, 1), border_mode='same', dim_ordering='tf')
 
-    #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
-    #                                strides=(2, 2), border_mode='valid')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
+                                   strides=(1, 1), border_mode='valid')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
+                                   strides=(1, 1), border_mode='same')
 
-    # def test_pool2d(self):
-    #     '''pool2d works "properly" with Theano and TF but outputs different
-    #     values in each case. Cause unclear (input shape format?)
-    #     '''
-    #     check_single_tensor_operation('pool2d', (5, 3, 10, 12), pool_size=(2, 2),
-    #                                   strides=(1, 1), border_mode='valid')
+        check_two_tensor_operation_flip_kernel('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
+                                   strides=(2, 2), border_mode='valid')
 
-    #     check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 2),
-    #                                   strides=(1, 1), border_mode='valid')
+    def test_pool2d(self):
+        check_single_tensor_operation('pool2d', (5, 3, 10, 12), pool_size=(2, 2),
+                                      strides=(1, 1), border_mode='valid')
 
-    #     check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 3),
-    #                                   strides=(1, 1), border_mode='valid')
+        check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 2),
+                                      strides=(1, 1), border_mode='valid')
+
+        check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 3),
+                                      strides=(1, 1), border_mode='valid')
 
     def test_random_normal(self):
         mean = 0.
@@ -354,6 +359,32 @@ class TestBackend(object):
         assert(np.abs(np.mean(rand)) < 0.01)
         assert(np.max(rand) <= max)
         assert(np.min(rand) >= min)
+
+
+def check_two_tensor_operation_flip_kernel(function_name, x_input_shape,
+                               y_input_shape, **kwargs):
+    '''Hack to demonstrate differences between conv2d in KTF vs KTH.
+
+    TensorFlow conv2d does correlation not convolution so we must flip
+    the kernel.
+    '''
+    xval = np.random.random(x_input_shape) - 0.5
+    xth = KTH.variable(xval)
+    xtf = KTF.variable(xval)
+
+    yval = np.random.random(y_input_shape) - 0.5
+    yth = KTH.variable(yval)
+    # flip the kernel
+    if kwargs.get('dim_ordering') == 'tf':
+        ytf = KTF.variable(yval[::-1, ::-1, :, :])
+    else:
+        ytf = KTF.variable(yval[:, :, ::-1, ::-1])
+
+    zth = KTH.eval(getattr(KTH, function_name)(xth, yth, **kwargs))
+    ztf = KTF.eval(getattr(KTF, function_name)(xtf, ytf, **kwargs))
+
+    assert zth.shape == ztf.shape
+    assert_allclose(zth, ztf, atol=1e-05)
 
 
 if __name__ == '__main__':
